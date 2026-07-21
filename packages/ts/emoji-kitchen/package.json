@@ -1,0 +1,45 @@
+{
+  "name": "emoji-kitchen",
+  "version": "1.0.0",
+  "description": "Emoji Kitchen",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "release": "bumpp",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "ekbf": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "bumpp": "^11.1.0",
+    "tsdown": "^0.22.5",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "keywords": [
+    "emoji",
+    "emoji-kitchen",
+    "emoji-mixer",
+    "emoji-mashup"
+  ],
+  "author": "arnav-kr",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "module": "./dist/index.js"
+}

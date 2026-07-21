@@ -4,9 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:compile": "go build -o build/compile.exe cmd/compile/main.go",
-    "build:decompile": "go build -o build/decompile.exe cmd/decompile/main.go",
-    "build:crawl": "go build -o build/crawl.exe cmd/crawl/main.go"
+    "build": "tsdown -W",
+    "dev": "tsdown -W --watch",
+    "test": "vitest",
+    "typecheck": "pnpm -r typecheck",
+    "build:compile": "go build -o build/compile.exe ./cmd/compile/main.go",
+    "build:decompile": "go build -o build/decompile.exe ./cmd/decompile/main.go",
+    "build:crawl": "go build -o build/crawl.exe ./cmd/crawl/main.go"
   },
   "keywords": [],
   "author": "",
@@ -18,5 +22,12 @@
       "onFail": "download"
     }
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "@types/node": "^26.1.1",
+    "bumpp": "^11.1.0",
+    "tsdown": "^0.22.5",
+    "vitest": "^4.1.10"
+  }
 }
