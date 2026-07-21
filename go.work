@@ -1,0 +1,9 @@
+go 1.26.5
+
+use (
+	./cmd/compile
+	./cmd/crawl
+	./cmd/decompile
+	./packages/go/ekbf
+	./packages/go/emoji-kitchen
+)

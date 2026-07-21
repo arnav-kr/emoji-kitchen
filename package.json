@@ -1,0 +1,22 @@
+{
+  "name": "emoji-kitchen-monorepo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build:compile": "go build -o build/compile.exe cmd/compile/main.go",
+    "build:decompile": "go build -o build/decompile.exe cmd/decompile/main.go",
+    "build:crawl": "go build -o build/crawl.exe cmd/crawl/main.go"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "AGPL-3.0-only",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.10.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module"
+}
