@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type tenorResult struct {
@@ -40,21 +41,30 @@ type intermediatePair struct {
 }
 
 func main() {
-	apiKey := os.Getenv("TENOR_API_KEY")
-	if apiKey == "" {
-		apiKey = "AIzaSyACvEq5cnT7AcHpDdj64SE3TJZRhW-iHuo"
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+				Transport: &http.Transport{
+					MaxIdleConns:        200,
+					MaxIdleConnsPerHost: 200,
+					IdleConnTimeout:     30 * time.Second,
+				},
 	}
 
-	baseURL := "https://tenor.googleapis.com/v2/featured?key=" + apiKey + "&limit=2&media_filter=png_transparent&collection=emoji_kitchen_v6&client_key=emoji_kitchen_funbox&q=%s"
-	fmt.Printf(baseURL, "👩‍👧‍👦")
+	res, err := queryTenor(client, "😵‍💫")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(res)
+
 	a := emojiToCodePoint("👩‍👧‍👦")
 	fmt.Println(codepointToEmoji(a))
-	emojis, err := getAllEmojis()
+	emojis, err := getAllEmojis(client)
 	if err != nil {
 		fmt.Println(err)
 	}
 	fmt.Println(len(emojis))
-	fmt.Println(emojis)
+	// fmt.Println(emojis)
+
 }
 
 func emojiToCodePoint(emoji string) string {
@@ -79,10 +89,34 @@ func codepointToEmoji(hexStr string) string {
 	return b.String()
 }
 
-func getAllEmojis() ([]string, error) {
+func queryTenor(client *http.Client, query string) (*tenorResponse, error) {
+	url := fmt.Sprintf("https://tenor.googleapis.com/v2/featured?key=AIzaSyACvEq5cnT7AcHpDdj64SE3TJZRhW-iHuo&limit=2&media_filter=png_transparent&collection=emoji_kitchen_v6&client_key=emoji_kitchen_funbox&q=%s", url.QueryEscape(query))
+	backoff := 100 * time.Millisecond
+	maxRetries := 5
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		response, err := client.Get(url)
+		if err == nil {
+			defer response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				var tr tenorResponse
+				if err := json.NewDecoder(response.Body).Decode(&tr); err == nil {
+					return &tr, nil
+				}
+			}
+		}
+		if attempt < maxRetries {
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+	}
+	return nil, fmt.Errorf("failed to query tenor after %d attempts", maxRetries)
+}
+
+func getAllEmojis(client *http.Client) ([]string, error) {
 	var response *http.Response
 	var err error
-	response, err = http.Get("https://unicode.org/Public/emoji/latest/emoji-test.txt")
+	response, err = client.Get("https://unicode.org/Public/emoji/latest/emoji-test.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +140,7 @@ func getAllEmojis() ([]string, error) {
 		for i, part := range subparts {
 			subparts[i] = strings.ToLower(part)
 		}
-		emojis = append(emojis, codepointToEmoji(strings.Join(subparts, "-")))
+		emojis = append(emojis, strings.Join(subparts, "-"))
 	}
 	if err := scanner.Err();
 	err != nil {
