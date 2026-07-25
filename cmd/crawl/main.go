@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,8 +28,8 @@ type tenorResponse struct {
 }
 
 type PairTuple struct {
-	Left string
-	Right string
+	Left      string
+	Right     string
 	DateIndex int
 }
 
@@ -40,34 +38,43 @@ func (p PairTuple) MarshalJSON() ([]byte, error) {
 }
 
 type intermediatePair struct {
-	Left string
-	Right string
+	Left       string
+	Right      string
 	DateString string
 }
 
 func main() {
+	start := time.Now()
+	defer func() {
+		fmt.Printf("Total duration: %s\n", time.Since(start))
+	}()
 	client := &http.Client{
 		Timeout: 8 * time.Second,
-				Transport: &http.Transport{
-					MaxIdleConns:        200,
-					MaxIdleConnsPerHost: 200,
-					IdleConnTimeout:     30 * time.Second,
-				},
+		Transport: &http.Transport{
+			MaxIdleConns:        1000,
+			MaxConnsPerHost:     1000,
+			MaxIdleConnsPerHost: 2000,
+			IdleConnTimeout:     90 * time.Second,
+			DisableCompression:  false,
+			ForceAttemptHTTP2:   true,
+		},
 	}
 
 	res, err := queryTenor(client, "👩‍👧‍👦")
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	if res == nil || len(res.Results) == 0 {
-			fmt.Println("No results found for query")
-			return
-		}
+		fmt.Println("No results found for query")
+		return
+	}
 	fmt.Println(res)
 	fmt.Println(res.Results[0].MediaFormats.PNGTransparent.URL)
 	parsed, err := parseStickerURL(res.Results[0].MediaFormats.PNGTransparent.URL)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	fmt.Println(parsed)
 	a := emojiToCodePoint("👩‍👧‍👦")
@@ -75,14 +82,21 @@ func main() {
 	emojis, err := getAllEmojis(client)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	fmt.Println(len(emojis))
 	validCanEmojis, validAliases, err := getValidEmojis(client, emojis)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	fmt.Println(len(validCanEmojis), len(validAliases))
-
+	validCombinations, sortedDates, err := getValidCombinations(client, validCanEmojis)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(len(validCombinations), sortedDates)
 }
 
 func emojiToCodePoint(emoji string) string {
@@ -112,18 +126,18 @@ func stripPrefix(hexStr string) string {
 	return strings.ReplaceAll(hexStr, "-u", "-")
 }
 
-func parseStickerURL(url string) (intermediatePair, error) {
-	matches := regexp.MustCompile(`/emojikitchen/(?P<date>\d{8})/u(?P<dir>[0-9a-fA-F-u]+)/u(?P<left>[0-9a-fA-F-u]+)_u(?P<right>[0-9a-fA-F-u]+)\.png`).FindStringSubmatch(url)
-	if matches == nil {
-		return intermediatePair{}, fmt.Errorf("invalid sticker URL: %s", url)
+func parseStickerURL(rawURL string) (intermediatePair, error) {
+	_, path, ok := strings.Cut(rawURL, "/emojikitchen/")
+	if !ok {
+		return intermediatePair{}, fmt.Errorf("invalid sticker URL: %s", rawURL)
 	}
-	date := matches[1]
-	// dir := matches[2]
-	left := matches[3]
-	right := matches[4]
+
+	parts := strings.Split(path, "/")
+	filename := strings.TrimSuffix(parts[2], ".png")
+	left, right, _ := strings.Cut(filename, "_")
 
 	return intermediatePair{
-		DateString: date,
+		DateString: parts[0],
 		Left:       stripPrefix(left),
 		Right:      stripPrefix(right),
 	}, nil
@@ -139,21 +153,26 @@ func getCanonicalEmoji(tags1, tags2 []string) string {
 }
 
 func queryTenor(client *http.Client, query string) (*tenorResponse, error) {
-	url := fmt.Sprintf("https://tenor.googleapis.com/v2/featured?key=AIzaSyACvEq5cnT7AcHpDdj64SE3TJZRhW-iHuo&limit=2&media_filter=png_transparent&collection=emoji_kitchen_v6&client_key=emoji_kitchen_funbox&q=%s", url.QueryEscape(query))
+	reqUrl := fmt.Sprintf("https://tenor.googleapis.com/v2/featured?key=AIzaSyACvEq5cnT7AcHpDdj64SE3TJZRhW-iHuo&limit=2&media_filter=png_transparent&collection=emoji_kitchen_v6&client_key=emoji_kitchen_funbox&q=%s", url.QueryEscape(query))
 	backoff := 100 * time.Millisecond
 	maxRetries := 5
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		response, err := client.Get(url)
+		response, err := client.Get(reqUrl)
 		if err == nil {
-			defer response.Body.Close()
 			switch response.StatusCode {
 			case http.StatusOK:
 				var tr tenorResponse
-				if err := json.NewDecoder(response.Body).Decode(&tr); err == nil {
+				decErr := json.NewDecoder(response.Body).Decode(&tr)
+				response.Body.Close()
+				if decErr == nil {
 					return &tr, nil
 				}
+			case http.StatusBadRequest:
+				response.Body.Close()
+				return nil, fmt.Errorf("bad request: %s", reqUrl)
 			case http.StatusNotFound:
+				response.Body.Close()
 				return nil, nil
 			default:
 				response.Body.Close()
@@ -196,8 +215,7 @@ func getAllEmojis(client *http.Client) ([]string, error) {
 		}
 		emojis = append(emojis, strings.Join(subparts, "-"))
 	}
-	if err := scanner.Err();
-	err != nil {
+	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return emojis, nil
@@ -207,7 +225,7 @@ func getValidEmojis(client *http.Client, emojis []string) ([]string, map[string]
 	canonicalSet := make(map[string]string)
 	aliases := make(map[string]string)
 
-	WORKERS_COUNT := 50
+	workersCount := 500
 
 	totalJobs := len(emojis)
 	var processedCount atomic.Int64
@@ -217,55 +235,141 @@ func getValidEmojis(client *http.Client, emojis []string) ([]string, map[string]
 	jobs := make(chan string, totalJobs)
 	var wg sync.WaitGroup
 
-	for range WORKERS_COUNT {
-			wg.Go(func() {
-				for cp := range jobs {
-					emoji := codepointToEmoji(cp)
+	for range workersCount {
+		wg.Go(func() {
+			for cp := range jobs {
+				emoji := codepointToEmoji(cp)
 
-					res, err := queryTenor(client, emoji)
+				res, err := queryTenor(client, emoji)
 
-					currCount := processedCount.Add(1)
-					if currCount % 10 == 0 || int(currCount) == totalJobs {
-						fmt.Printf("\r[ValidateEmojis] Processed: %d/%d (%.1f%%) | Valid: %d",
-							currCount, totalJobs, float64(currCount) / float64(totalJobs) * 100, validCount.Load())
-					}
-
-					if err != nil || res == nil {
-						continue
-					}
-
-					tags1, tags2 := res.Results[0].Tags, res.Results[1].Tags
-					canonical := getCanonicalEmoji(tags1, tags2)
-					if canonical == "" {
-						continue
-					}
-
-					canonical_cp := emojiToCodePoint(canonical)
-					validCount.Add(1)
-
-					mu.Lock()
-					canonicalSet[canonical_cp] = cp
-					if cp != canonical_cp {
-						aliases[cp] = canonical
-					}
-					mu.Unlock()
+				currCount := processedCount.Add(1)
+				if currCount%10 == 0 || int(currCount) == totalJobs {
+					fmt.Printf("\r[ValidateEmojis] Processed: %d/%d (%.1f%%) | Valid: %d",
+						currCount, totalJobs, float64(currCount)/float64(totalJobs)*100, validCount.Load())
 				}
-			})
-		}
 
-	for _, emoji_codepoint := range emojis {
-		jobs <- emoji_codepoint
+				if err != nil || res == nil {
+					continue
+				}
+
+				if len(res.Results) < 2 {
+					continue
+				}
+
+				tags1, tags2 := res.Results[0].Tags, res.Results[1].Tags
+				canonical := getCanonicalEmoji(tags1, tags2)
+				if canonical == "" {
+					continue
+				}
+
+				canonical_cp := emojiToCodePoint(canonical)
+				validCount.Add(1)
+
+				mu.Lock()
+				canonicalSet[canonical_cp] = cp
+				if cp != canonical_cp {
+					aliases[cp] = canonical
+				}
+				mu.Unlock()
+			}
+		})
+	}
+
+	for _, emoji_cp := range emojis {
+		jobs <- emoji_cp
 	}
 	close(jobs)
 	wg.Wait()
 	fmt.Printf("\r[ValidateEmojis] Total: %d | Valid: %d | Canonicals: %d | Aliases: %d\033[K\n",
-			totalJobs, validCount.Load(), len(canonicalSet), len(aliases))
+		totalJobs, validCount.Load(), len(canonicalSet), len(aliases))
 
 	canonicals := make([]string, 0, len(canonicalSet))
 	for cp := range canonicalSet {
 		canonicals = append(canonicals, cp)
 	}
 
-	sort.Strings(canonicals)
+	slices.Sort(canonicals)
 	return canonicals, aliases, nil
+}
+
+func getValidCombinations(client *http.Client, canonicals []string) ([]intermediatePair, []string, error) {
+	n := len(canonicals)
+	totalJobs := int64(n * (n + 1) / 2)
+	if totalJobs == 0 {
+		return nil, nil, nil
+	}
+
+	type job struct{ i, j int }
+	workersCount := 1000
+
+	jobs := make(chan job, totalJobs)
+	for i := range n {
+		for j := range i + 1 {
+			jobs <- job{i, j}
+		}
+	}
+	close(jobs)
+	var (
+		validCombinations []intermediatePair
+		dateSet           = make(map[string]struct{})
+		mu                sync.Mutex
+		processedCount    atomic.Int64
+		validCount        atomic.Int64
+		wg                sync.WaitGroup
+	)
+
+	for range workersCount {
+		wg.Go(func() {
+			var localCombos []intermediatePair
+			localDates := make(map[string]struct{})
+			for job := range jobs {
+				leftEmoji := codepointToEmoji(canonicals[job.i])
+				rightEmoji := codepointToEmoji(canonicals[job.j])
+
+				query := fmt.Sprintf("%s_%s", leftEmoji, rightEmoji)
+
+				res, err := queryTenor(client, (query))
+
+				currCount := processedCount.Add(1)
+				if currCount%100 == 0 || currCount == totalJobs {
+					fmt.Printf("\r[ValidateCombinations] Processed: %d/%d (%.1f%%) | Valid pairs: %d", currCount, totalJobs, float64(currCount)/float64(totalJobs)*100, validCount.Load())
+				}
+
+				if err != nil || res == nil {
+					continue
+				}
+
+				if len(res.Results) < 1 {
+					continue
+				}
+
+				stickerURL := res.Results[0].MediaFormats.PNGTransparent.URL
+				combo, err := parseStickerURL(stickerURL)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+				validCount.Add(1)
+				localCombos = append(localCombos, combo)
+				localDates[combo.DateString] = struct{}{}
+			}
+			mu.Lock()
+			validCombinations = append(validCombinations, localCombos...)
+			for d := range localDates {
+				dateSet[d] = struct{}{}
+			}
+			mu.Unlock()
+
+		})
+	}
+	wg.Wait()
+	fmt.Printf("\r[ValidateCombinations] Total: %d | Valid: %d\033[K\n",
+		totalJobs, validCount.Load())
+
+	sortedDates := make([]string, 0, len(dateSet))
+	for date := range dateSet {
+		sortedDates = append(sortedDates, date)
+	}
+	slices.Sort(sortedDates)
+	return validCombinations, sortedDates, nil
 }
