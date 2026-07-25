@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -47,6 +49,12 @@ func main() {
 	fmt.Printf(baseURL, "👩‍👧‍👦")
 	a := emojiToCodePoint("👩‍👧‍👦")
 	fmt.Println(codepointToEmoji(a))
+	emojis, err := getAllEmojis()
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(len(emojis))
+	fmt.Println(emojis)
 }
 
 func emojiToCodePoint(emoji string) string {
@@ -69,4 +77,40 @@ func codepointToEmoji(hexStr string) string {
 		}
 	}
 	return b.String()
+}
+
+func getAllEmojis() ([]string, error) {
+	var response *http.Response
+	var err error
+	response, err = http.Get("https://unicode.org/Public/emoji/latest/emoji-test.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	var emojis []string
+	scanner := bufio.NewScanner(response.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.Contains(line, "; fully-qualified") {
+			continue
+		}
+		if !strings.Contains(line, "#") {
+			continue
+		}
+		if strings.Contains(line, "skin tone") {
+			continue
+		}
+		codePoint := strings.TrimSpace(strings.Split(line, ";")[0])
+		subparts := strings.Fields(codePoint)
+		for i, part := range subparts {
+			subparts[i] = strings.ToLower(part)
+		}
+		emojis = append(emojis, codepointToEmoji(strings.Join(subparts, "-")))
+	}
+	if err := scanner.Err();
+	err != nil {
+		return nil, err
+	}
+	return emojis, nil
 }
