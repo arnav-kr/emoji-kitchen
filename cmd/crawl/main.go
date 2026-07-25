@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,11 +45,26 @@ type intermediatePair struct {
 	DateString string
 }
 
+type emojiKitchenData struct {
+	LastAmended string            `json:"last_amended"`
+	Canonicals  []string          `json:"canonicals"`
+	Dates       []string          `json:"dates"`
+	Aliases     map[string]string `json:"aliases"`
+	Pairs       []PairTuple       `json:"pairs"`
+}
+
 func main() {
 	start := time.Now()
 	defer func() {
-		fmt.Printf("Total duration: %s\n", time.Since(start))
+		fmt.Printf("Total Time Taken: %s\n", time.Since(start))
 	}()
+
+	outDir := "./dist"
+
+	if len(os.Args) > 1 {
+		outDir = os.Args[1]
+	}
+
 	client := &http.Client{
 		Timeout: 8 * time.Second,
 		Transport: &http.Transport{
@@ -56,47 +73,40 @@ func main() {
 			MaxIdleConnsPerHost: 2000,
 			IdleConnTimeout:     90 * time.Second,
 			DisableCompression:  false,
-			ForceAttemptHTTP2:   true,
 		},
 	}
 
-	res, err := queryTenor(client, "👩‍👧‍👦")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	if res == nil || len(res.Results) == 0 {
-		fmt.Println("No results found for query")
-		return
-	}
-	fmt.Println(res)
-	fmt.Println(res.Results[0].MediaFormats.PNGTransparent.URL)
-	parsed, err := parseStickerURL(res.Results[0].MediaFormats.PNGTransparent.URL)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(parsed)
-	a := emojiToCodePoint("👩‍👧‍👦")
-	fmt.Println(codepointToEmoji(a))
+	t0 := time.Now()
 	emojis, err := getAllEmojis(client)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(len(emojis))
-	validCanEmojis, validAliases, err := getValidEmojis(client, emojis)
+	fmt.Printf("[getUnicodeEmojis] Total: %d emojis (%s)\n", len(emojis), time.Since(t0))
+
+	t1 := time.Now()
+	emojiCanonicals, emojiALiases, err := getValidEmojis(client, emojis)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(len(validCanEmojis), len(validAliases))
-	validCombinations, sortedDates, err := getValidCombinations(client, validCanEmojis)
+	fmt.Printf("\n[getValidEmojis] Total: %d canonicals, %d aliases (%s)\n",
+		len(emojiCanonicals), len(emojiALiases), time.Since(t1))
+
+	t2 := time.Now()
+	pairs, dates, err := getValidCombinations(client, emojiCanonicals)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(len(validCombinations), sortedDates)
+	fmt.Printf("\n[getValidCombinations] Total: %d valid combinations, %d unique dates (%s)\n",
+		len(pairs), len(dates), time.Since(t2))
+
+	if err := saveData(outDir, emojiCanonicals, emojiALiases, dates, pairs); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("\nSaved Emoji Kitchen data to %s (%s)\n", outDir, time.Since(t2))
 }
 
 func emojiToCodePoint(emoji string) string {
@@ -155,7 +165,7 @@ func getCanonicalEmoji(tags1, tags2 []string) string {
 func queryTenor(client *http.Client, query string) (*tenorResponse, error) {
 	reqUrl := fmt.Sprintf("https://tenor.googleapis.com/v2/featured?key=AIzaSyACvEq5cnT7AcHpDdj64SE3TJZRhW-iHuo&limit=2&media_filter=png_transparent&collection=emoji_kitchen_v6&client_key=emoji_kitchen_funbox&q=%s", url.QueryEscape(query))
 	backoff := 100 * time.Millisecond
-	maxRetries := 5
+	maxRetries := 8
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		response, err := client.Get(reqUrl)
@@ -222,10 +232,10 @@ func getAllEmojis(client *http.Client) ([]string, error) {
 }
 
 func getValidEmojis(client *http.Client, emojis []string) ([]string, map[string]string, error) {
-	canonicalSet := make(map[string]string)
+	canonicalSet := make(map[string]struct{})
 	aliases := make(map[string]string)
 
-	workersCount := 500
+	workersCount := 50
 
 	totalJobs := len(emojis)
 	var processedCount atomic.Int64
@@ -263,12 +273,13 @@ func getValidEmojis(client *http.Client, emojis []string) ([]string, map[string]
 				}
 
 				canonical_cp := emojiToCodePoint(canonical)
+				normalized_cp := emojiToCodePoint(emoji)
 				validCount.Add(1)
 
 				mu.Lock()
-				canonicalSet[canonical_cp] = cp
-				if cp != canonical_cp {
-					aliases[cp] = canonical
+				canonicalSet[canonical_cp] = struct{}{}
+				if normalized_cp != canonical_cp {
+					aliases[normalized_cp] = canonical_cp
 				}
 				mu.Unlock()
 			}
@@ -280,8 +291,8 @@ func getValidEmojis(client *http.Client, emojis []string) ([]string, map[string]
 	}
 	close(jobs)
 	wg.Wait()
-	fmt.Printf("\r[ValidateEmojis] Total: %d | Valid: %d | Canonicals: %d | Aliases: %d\033[K\n",
-		totalJobs, validCount.Load(), len(canonicalSet), len(aliases))
+	fmt.Printf("\r[ValidateEmojis] Processed: %d/%d (%.1f%%) | Valid: %d",
+		totalJobs, totalJobs, 100.0, validCount.Load())
 
 	canonicals := make([]string, 0, len(canonicalSet))
 	for cp := range canonicalSet {
@@ -300,7 +311,7 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 	}
 
 	type job struct{ i, j int }
-	workersCount := 1000
+	workersCount := 400
 
 	jobs := make(chan job, totalJobs)
 	for i := range n {
@@ -363,8 +374,7 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 		})
 	}
 	wg.Wait()
-	fmt.Printf("\r[ValidateCombinations] Total: %d | Valid: %d\033[K\n",
-		totalJobs, validCount.Load())
+	fmt.Printf("\r[ValidateCombinations] Processed: %d/%d (%.1f%%) | Valid pairs: %d", totalJobs, totalJobs, 100.0, validCount.Load())
 
 	sortedDates := make([]string, 0, len(dateSet))
 	for date := range dateSet {
@@ -372,4 +382,51 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 	}
 	slices.Sort(sortedDates)
 	return validCombinations, sortedDates, nil
+}
+
+func saveData(outDir string, canonicals []string, aliases map[string]string, dates []string, pairs []intermediatePair) error {
+	dateMap := make(map[string]int, len(dates))
+	for i, date := range dates {
+		dateMap[date] = i
+	}
+
+	processedPairs := make([]PairTuple, 0, len(pairs))
+	for _, pair := range pairs {
+		if i, exists := dateMap[pair.DateString]; exists {
+			processedPairs = append(processedPairs, PairTuple{
+				Left:      pair.Left,
+				Right:     pair.Right,
+				DateIndex: i,
+			})
+		}
+	}
+
+	slices.SortFunc(processedPairs, func(a, b PairTuple) int {
+		if a.Left != b.Left {
+			return strings.Compare(a.Left, b.Left)
+		}
+		return strings.Compare(a.Right, b.Right)
+	})
+
+	var lastAmended string
+	if len(processedPairs) > 0 {
+		lastAmended = dates[len(dates)-1]
+	}
+	ekData := emojiKitchenData{
+		LastAmended: lastAmended,
+		Canonicals:  canonicals,
+		Dates:       dates,
+		Aliases:     aliases,
+		Pairs:       processedPairs,
+	}
+
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(ekData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode source schema JSON: %w", err)
+	}
+	outPath := filepath.Join(outDir, fmt.Sprintf("emoji-kitchen-%s.json", lastAmended))
+	return os.WriteFile(outPath, data, 0644)
 }
