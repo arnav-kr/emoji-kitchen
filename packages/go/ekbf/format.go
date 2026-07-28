@@ -9,6 +9,7 @@ import (
 var Magic = [4]byte{'E', 'K', 'B', 'F'}
 
 var Versions = []uint16{1}
+var CurrentVersion uint16 = 1
 
 // size in bytes
 const (
