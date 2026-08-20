@@ -1,9 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"encoding/json"
 	"strings"
 
 	"github.com/arnav-kr/emoji-kitchen/cmd/internal/schema"

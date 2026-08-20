@@ -87,16 +87,16 @@ func (f *Reader) LastAmended() string {
 func (f *Reader) Aliases() (map[string]string, error) {
 	mapping := make(map[string]string, f.header.AliasCount)
 	table := f.data[f.layout.StringTableStart:]
- 
+
 	for i := range int(f.header.AliasCount) {
 		recordStart := f.layout.AliasRecordsStart + i*AliasRecordSize
 		aliasOffset := binary.LittleEndian.Uint32(f.data[recordStart : recordStart+AliasRecordSize/2])
 		targetID := binary.LittleEndian.Uint32(f.data[recordStart+AliasRecordSize/2 : recordStart+AliasRecordSize])
- 
+
 		if int(targetID) >= len(f.canonicals) {
 			return nil, fmt.Errorf("ekbf: alias record %d points at canonical ID %d, but there are only %d canonicals", i, targetID, len(f.canonicals))
 		}
- 
+
 		mapping[readFromStringTable(table, aliasOffset)] = f.canonicals[targetID]
 	}
 	return mapping, nil
@@ -180,7 +180,7 @@ func (f *Reader) Lookup(left, right string) (Pair, bool) {
 	dateIndex := abs16(value) - 1
 	dateStart := f.layout.DateArrayStart + dateIndex*DateSize
 	date := binary.LittleEndian.Uint32(f.data[dateStart : dateStart+DateSize])
-	
+
 	rowHex, colHex := f.canonicals[row], f.canonicals[col]
 	primary, other := rowHex, colHex
 	if value < 0 {
@@ -200,7 +200,6 @@ func abs16(v int16) int {
 	}
 	return wide
 }
- 
 
 func (f *Reader) PartnersOf(hex string) ([]string, error) {
 	id, ok := f.Resolve(hex)

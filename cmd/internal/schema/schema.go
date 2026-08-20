@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 )
+
 type PairTuple struct {
 	Left  string
 	Right string

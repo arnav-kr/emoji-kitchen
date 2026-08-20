@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"os"
+	"path/filepath"
 
-	"github.com/arnav-kr/emoji-kitchen/packages/go/ekbf"
 	"github.com/arnav-kr/emoji-kitchen/cmd/internal/schema"
+	"github.com/arnav-kr/emoji-kitchen/packages/go/ekbf"
 )
 
 func main() {
@@ -50,7 +50,7 @@ func compile(sourcePath, outPath string) error {
 
 	for _, p := range sourceJSON.Pairs {
 		builder.Pairs = append(builder.Pairs, ekbf.Pair{
-			Left:      p.Left,
+			Left:  p.Left,
 			Right: p.Right,
 			Date:  p.Date,
 		})
