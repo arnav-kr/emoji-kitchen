@@ -11,9 +11,9 @@ import (
 )
 
 type Pair struct {
-	Left      string
-	Right     string
-	DateIndex int
+	Left  string
+	Right string
+	Date  string
 }
 
 type Builder struct {
@@ -25,12 +25,12 @@ type Builder struct {
 }
 
 func (b *Builder) Encode(w io.Writer) error {
-	if !slices.Contains(Versions, b.Version) {
-		return fmt.Errorf("unsupported version: %d", b.Version)
-	}
-
 	if b.Version == 0 {
 		b.Version = uint16(CurrentVersion)
+	}
+
+	if !slices.Contains(Versions, b.Version) {
+		return fmt.Errorf("unsupported version: %d", b.Version)
 	}
 
 	if len(b.Dates) > MaxDate {
@@ -61,30 +61,32 @@ func (b *Builder) Encode(w io.Writer) error {
 	aliasRecords := make([]byte, len(alises)*AliasRecordSize)
 	for i, aliasValue := range alises {
 		targetValue := b.Aliases[aliasValue]
-		if _, ok := canonicalMap[targetValue]; !ok {
+		targetID, ok := canonicalMap[targetValue]
+		if !ok {
 			return fmt.Errorf("alias %q points at %q, which is not in Canonicals", aliasValue, targetValue)
 		}
 
 		aliasOffset := writeToStringTable(&stringTableBuf, aliasValue)
-		targetOffset := writeToStringTable(&stringTableBuf, targetValue)
 
 		recordStart := i * AliasRecordSize
 		binary.LittleEndian.PutUint32(aliasRecords[recordStart:], aliasOffset)
-		binary.LittleEndian.PutUint32(aliasRecords[recordStart+4:], targetOffset)
+		binary.LittleEndian.PutUint32(aliasRecords[recordStart+4:], targetID)
 	}
 
 	dates := make([]uint32, len(b.Dates))
+	dateIndices := make(map[string]int, len(b.Dates))
 	for i, date := range b.Dates {
 		value, err := parseDate(date)
 		if err != nil {
 			return err
 		}
 		dates[i] = value
+		dateIndices[date] = i
 	}
 
 	matrix := make([]byte, MatrixSize(len(canonicals))*MatrixValueSize)
 	for _, pair := range b.Pairs {
-		if err := writePair(matrix, canonicalMap, pair); err != nil {
+		if err := writePair(matrix, canonicalMap, dateIndices, pair); err != nil {
 			return err
 		}
 	}
@@ -171,7 +173,7 @@ func parseDate(s string) (uint32, error) {
 	return uint32(value), nil
 }
 
-func writePair(matrix []byte, canonicalMap map[string]uint32, pair Pair) error {
+func writePair(matrix []byte, canonicalMap map[string]uint32, dateIndices map[string]int, pair Pair) error {
 	left, ok := canonicalMap[pair.Left]
 	if !ok {
 		return fmt.Errorf("left emoji not found: %s", pair.Left)
@@ -179,6 +181,10 @@ func writePair(matrix []byte, canonicalMap map[string]uint32, pair Pair) error {
 	right, ok := canonicalMap[pair.Right]
 	if !ok {
 		return fmt.Errorf("right emoji not found: %s", pair.Right)
+	}
+	dateIdx, ok := dateIndices[pair.Date]
+	if !ok {
+		return fmt.Errorf("pair %s + %s references date %q, which is not in Dates", pair.Left, pair.Right, pair.Date)
 	}
 
 	row, col := left, right
@@ -189,7 +195,7 @@ func writePair(matrix []byte, canonicalMap map[string]uint32, pair Pair) error {
 		isSwapped = true
 	}
 
-	value := int16(pair.DateIndex + 1)
+	value := int16(dateIdx + 1)
 	if isSwapped {
 		value = -value
 	}

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/arnav-kr/emoji-kitchen/cmd/internal/schema"
 )
 
 type tenorResult struct {
@@ -27,30 +29,6 @@ type tenorResult struct {
 
 type tenorResponse struct {
 	Results []tenorResult `json:"results"`
-}
-
-type PairTuple struct {
-	Left      string
-	Right     string
-	DateIndex int
-}
-
-func (p PairTuple) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&[3]any{p.Left, p.Right, p.DateIndex})
-}
-
-type intermediatePair struct {
-	Left       string
-	Right      string
-	DateString string
-}
-
-type emojiKitchenData struct {
-	LastAmended string            `json:"last_amended"`
-	Canonicals  []string          `json:"canonicals"`
-	Dates       []string          `json:"dates"`
-	Aliases     map[string]string `json:"aliases"`
-	Pairs       []PairTuple       `json:"pairs"`
 }
 
 func main() {
@@ -136,18 +114,18 @@ func stripPrefix(hexStr string) string {
 	return strings.ReplaceAll(hexStr, "-u", "-")
 }
 
-func parseStickerURL(rawURL string) (intermediatePair, error) {
+func parseStickerURL(rawURL string) (schema.PairTuple, error) {
 	_, path, ok := strings.Cut(rawURL, "/emojikitchen/")
 	if !ok {
-		return intermediatePair{}, fmt.Errorf("invalid sticker URL: %s", rawURL)
+		return schema.PairTuple{}, fmt.Errorf("invalid sticker URL: %s", rawURL)
 	}
 
 	parts := strings.Split(path, "/")
 	filename := strings.TrimSuffix(parts[2], ".png")
 	left, right, _ := strings.Cut(filename, "_")
 
-	return intermediatePair{
-		DateString: parts[0],
+	return schema.PairTuple{
+		Date: parts[0],
 		Left:       stripPrefix(left),
 		Right:      stripPrefix(right),
 	}, nil
@@ -303,7 +281,7 @@ func getValidEmojis(client *http.Client, emojis []string) ([]string, map[string]
 	return canonicals, aliases, nil
 }
 
-func getValidCombinations(client *http.Client, canonicals []string) ([]intermediatePair, []string, error) {
+func getValidCombinations(client *http.Client, canonicals []string) ([]schema.PairTuple, []string, error) {
 	n := len(canonicals)
 	totalJobs := int64(n * (n + 1) / 2)
 	if totalJobs == 0 {
@@ -321,7 +299,7 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 	}
 	close(jobs)
 	var (
-		validCombinations []intermediatePair
+		validCombinations []schema.PairTuple
 		dateSet           = make(map[string]struct{})
 		mu                sync.Mutex
 		processedCount    atomic.Int64
@@ -331,7 +309,7 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 
 	for range workersCount {
 		wg.Go(func() {
-			var localCombos []intermediatePair
+			var localCombos []schema.PairTuple
 			localDates := make(map[string]struct{})
 			for job := range jobs {
 				leftEmoji := codepointToEmoji(canonicals[job.i])
@@ -362,7 +340,7 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 				}
 				validCount.Add(1)
 				localCombos = append(localCombos, combo)
-				localDates[combo.DateString] = struct{}{}
+				localDates[combo.Date] = struct{}{}
 			}
 			mu.Lock()
 			validCombinations = append(validCombinations, localCombos...)
@@ -384,24 +362,24 @@ func getValidCombinations(client *http.Client, canonicals []string) ([]intermedi
 	return validCombinations, sortedDates, nil
 }
 
-func saveData(outDir string, canonicals []string, aliases map[string]string, dates []string, pairs []intermediatePair) error {
+func saveData(outDir string, canonicals []string, aliases map[string]string, dates []string, pairs []schema.PairTuple) error {
 	dateMap := make(map[string]int, len(dates))
 	for i, date := range dates {
 		dateMap[date] = i
 	}
 
-	processedPairs := make([]PairTuple, 0, len(pairs))
+	processedPairs := make([]schema.PairTuple, 0, len(pairs))
 	for _, pair := range pairs {
-		if i, exists := dateMap[pair.DateString]; exists {
-			processedPairs = append(processedPairs, PairTuple{
-				Left:      pair.Left,
-				Right:     pair.Right,
-				DateIndex: i,
+		if i, exists := dateMap[pair.Date]; exists {
+			processedPairs = append(processedPairs, schema.PairTuple{
+				Left:  pair.Left,
+				Right: pair.Right,
+				Date:  dates[i],
 			})
 		}
 	}
 
-	slices.SortFunc(processedPairs, func(a, b PairTuple) int {
+	slices.SortFunc(processedPairs, func(a, b schema.PairTuple) int {
 		if a.Left != b.Left {
 			return strings.Compare(a.Left, b.Left)
 		}
@@ -412,7 +390,7 @@ func saveData(outDir string, canonicals []string, aliases map[string]string, dat
 	if len(processedPairs) > 0 {
 		lastAmended = dates[len(dates)-1]
 	}
-	ekData := emojiKitchenData{
+	ekData := schema.EmojiKitchenData{
 		LastAmended: lastAmended,
 		Canonicals:  canonicals,
 		Dates:       dates,

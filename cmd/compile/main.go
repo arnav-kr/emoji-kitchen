@@ -3,43 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"os"
 
 	"github.com/arnav-kr/emoji-kitchen/packages/go/ekbf"
+	"github.com/arnav-kr/emoji-kitchen/cmd/internal/schema"
 )
-
-type PairTuple struct {
-	Left      string 
-	Right     string
-	DateIndex int
-}
-
-func (p *PairTuple) UnmarshalJSON(data []byte) error {
-	var raw [3]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("PairTuple size should be 3: %w", err)
-	}
-
-	if err := json.Unmarshal(raw[0], &p.Left); err != nil {
-		return fmt.Errorf("invalid left: %w", err)
-	}
-	if err := json.Unmarshal(raw[1], &p.Right); err != nil {
-		return fmt.Errorf("invalid right: %w", err)
-	}
-	if err := json.Unmarshal(raw[2], &p.DateIndex); err != nil {
-		return fmt.Errorf("invalid date index: %w", err)
-	}
-
-	return nil
-}
-
-type emojiKitchenData struct {
-	LastAmended string            `json:"last_amended"`
-	Canonicals  []string          `json:"canonicals"`
-	Dates       []string          `json:"dates"`
-	Aliases     map[string]string `json:"aliases"`
-	Pairs       []PairTuple       `json:"pairs"`
-}
 
 func main() {
 	var sourcePath, outPath string
@@ -67,7 +36,7 @@ func compile(sourcePath, outPath string) error {
 	}
 	defer sourceFile.Close()
 
-	var sourceJSON emojiKitchenData
+	var sourceJSON schema.EmojiKitchenData
 	if err := json.NewDecoder(sourceFile).Decode(&sourceJSON); err != nil {
 		return err
 	}
@@ -82,8 +51,8 @@ func compile(sourcePath, outPath string) error {
 	for _, p := range sourceJSON.Pairs {
 		builder.Pairs = append(builder.Pairs, ekbf.Pair{
 			Left:      p.Left,
-			Right:     p.Right,
-			DateIndex: p.DateIndex,
+			Right: p.Right,
+			Date:  p.Date,
 		})
 	}
 
@@ -91,6 +60,7 @@ func compile(sourcePath, outPath string) error {
 		outPath = fmt.Sprintf("./dist/emoji-kitchen-%s.ekbf", sourceJSON.LastAmended)
 	}
 
+	os.MkdirAll(filepath.Dir(outPath), 0755)
 	outFile, err := os.Create(outPath)
 	if err != nil {
 		return err
