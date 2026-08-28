@@ -100,9 +100,9 @@ func MatrixSize(canonicalCount int) int {
 }
 
 func MatrixPosition(a, b uint32) uint32 {
-	row, col := a, b
+	row, col := uint64(a), uint64(b)
 	if row < col {
 		row, col = col, row
 	}
-	return row*(row+1)/2 + col
+	return uint32(row*(row+1)/2 + col)
 }

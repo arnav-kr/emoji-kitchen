@@ -47,6 +47,11 @@ func NewReader(data []byte) (*Reader, error) {
 		layout: computeLayout(header),
 	}
 
+	expectedMinSize := f.layout.StringTableStart
+	if len(data) < expectedMinSize {
+		return nil, fmt.Errorf("ekbf: data size (%d) too small for computed layout minimum (%d)", len(data), expectedMinSize)
+	}
+
 	f.canonicals = make([]string, f.header.CanonicalCount)
 	table := f.data[f.layout.StringTableStart:]
 	for i := range f.canonicals {

@@ -16,20 +16,16 @@ func (p PairTuple) MarshalJSON() ([]byte, error) {
 }
 
 func (p *PairTuple) UnmarshalJSON(data []byte) error {
-	var raw [3]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("pair should have exactly 3 elements: %w", err)
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return fmt.Errorf("invalid pair tuple format: %w", err)
 	}
-
-	if err := json.Unmarshal(raw[0], &p.Left); err != nil {
-		return fmt.Errorf("invalid left: %w", err)
+	if len(arr) != 3 {
+		return fmt.Errorf("pair tuple should have exactly 3 elements, got %d", len(arr))
 	}
-	if err := json.Unmarshal(raw[1], &p.Right); err != nil {
-		return fmt.Errorf("invalid right: %w", err)
-	}
-	if err := json.Unmarshal(raw[2], &p.Date); err != nil {
-		return fmt.Errorf("invalid date: %w", err)
-	}
+	p.Left = arr[0]
+	p.Right = arr[1]
+	p.Date = arr[2]
 	return nil
 }
 
