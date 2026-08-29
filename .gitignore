@@ -13,5 +13,3 @@ build/
 
 .env
 .env.*
-
-*.ekbf
