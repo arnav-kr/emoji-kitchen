@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/arnav-kr/emoji-kitchen" alt="License"/></a>
-  <a href="https://pkg.go.dev/github.com/arnav-kr/emoji-kitchen"><img src="https://pkg.go.dev/badge/github.com/arnav-kr/emoji-kitchen.svg" alt="Go Reference"/></a>
+  <a href="https://pkg.go.dev/github.com/arnav-kr/emoji-kitchen/packages/go/emoji-kitchen"><img src="https://pkg.go.dev/badge/github.com/arnav-kr/emoji-kitchen/packages/go/emoji-kitchen.svg" alt="Go Reference"/></a>
   <img src="https://img.shields.io/badge/typescript-WIP-orange" alt="TypeScript Status"/>
 </p>
 
