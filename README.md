@@ -5,7 +5,6 @@
 </p>
 
 <p align="center">
-  <a href="https://goreportcard.com/report/github.com/arnav-kr/emoji-kitchen"><img src="https://goreportcard.com/badge/github.com/arnav-kr/emoji-kitchen" alt="Go Report Card"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/arnav-kr/emoji-kitchen" alt="License"/></a>
   <a href="https://pkg.go.dev/github.com/arnav-kr/emoji-kitchen"><img src="https://pkg.go.dev/badge/github.com/arnav-kr/emoji-kitchen.svg" alt="Go Reference"/></a>
   <img src="https://img.shields.io/badge/typescript-WIP-orange" alt="TypeScript Status"/>
@@ -15,7 +14,7 @@
 
 Libraries and tools for working with Google's Emoji Kitchen combinations entirely offline. No network requests and no external API dependencies; the data ships with the library.
 
-This project started as a revamp of [emoji-kitchen.vercel.app](https://emoji-kitchen.vercel.app). Web APIs work fine for quick testing, but production code shouldn't depend on a third-party service for every lookup. These libraries let you ship the data with your application instead.
+This project grew out of [emoji-kitchen.vercel.app](https://emoji-kitchen.vercel.app), an Emoji Kitchen web app I created. As its user base grew, the architecture needed an overhaul to keep up, and that work evolved into this standalone set of libraries. The website is great for quick, casual testing, but production apps should rely on these libraries instead. That also takes load off the underlying API, helping it stay within its free quota.
 
 ## Why not just use JSON?
 
